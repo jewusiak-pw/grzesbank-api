@@ -2,7 +2,9 @@ package pl.jewusiak.grzesbankapi.controller;
 
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.view.RedirectView;
 import pl.jewusiak.grzesbankapi.model.mapper.ResponseMapper;
+import pl.jewusiak.grzesbankapi.model.request.RegistrationRequest;
 import pl.jewusiak.grzesbankapi.model.service.AuthService;
 
 import java.util.List;
@@ -24,6 +27,7 @@ import static org.springframework.security.web.context.HttpSessionSecurityContex
 @RestController
 @RequestMapping("/auth/oauth2")
 @RequiredArgsConstructor
+@Slf4j
 public class OAuth2Controller {
 
     private final AuthService authService;
@@ -36,14 +40,13 @@ public class OAuth2Controller {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This is not an OAuth2 login flow!");
         Map<String, Object> attributes = authenticationToken.getPrincipal().getAttributes();
 
-        var userOpt = authService.authOauth2(attributes);
-        if (userOpt.isPresent()) {
+        var user = authService.authOauth2(attributes);
             SecurityContext sc = SecurityContextHolder.getContext();
-            var auth = UsernamePasswordAuthenticationToken.authenticated(userOpt.get().getEmail(), null, userOpt.get().getAuthorities());
+            var auth = UsernamePasswordAuthenticationToken.authenticated(user.getEmail(), null, user.getAuthorities());
             sc.setAuthentication(auth);
             session.setAttribute(SPRING_SECURITY_CONTEXT_KEY, sc);
             return new RedirectView(webAppAuthUrl+"?result=true");
-        }
-        return new RedirectView(webAppAuthUrl+"?result=false");
+         
+        //return new RedirectView(webAppAuthUrl+"?result=false");
     }
 }

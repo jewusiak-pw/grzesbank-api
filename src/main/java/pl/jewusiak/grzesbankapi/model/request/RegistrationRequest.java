@@ -2,7 +2,10 @@ package pl.jewusiak.grzesbankapi.model.request;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.hibernate.validator.constraints.Length;
 import pl.jewusiak.grzesbankapi.model.domain.User;
 import pl.jewusiak.grzesbankapi.utils.ValidationService;
@@ -11,6 +14,9 @@ import pl.jewusiak.grzesbankapi.utils.validation.PasswordConstraint;
 import java.math.BigDecimal;
 
 @Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class RegistrationRequest {
     @PasswordConstraint
     @NotBlank

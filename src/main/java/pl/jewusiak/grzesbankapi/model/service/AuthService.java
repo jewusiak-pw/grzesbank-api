@@ -11,12 +11,11 @@ import pl.jewusiak.grzesbankapi.model.domain.*;
 import pl.jewusiak.grzesbankapi.model.mapper.UserMapper;
 import pl.jewusiak.grzesbankapi.model.request.RegistrationRequest;
 import pl.jewusiak.grzesbankapi.model.response.PasswordCombinationResponse;
-import pl.jewusiak.grzesbankapi.repository.UserLoginAttemptRepository;
 import pl.jewusiak.grzesbankapi.repository.PasswordResetRequestRepository;
+import pl.jewusiak.grzesbankapi.repository.UserLoginAttemptRepository;
 import pl.jewusiak.grzesbankapi.repository.UserRepository;
 import pl.jewusiak.grzesbankapi.utils.AccountFactory;
 import pl.jewusiak.grzesbankapi.utils.CreditCardFactory;
-import pl.jewusiak.grzesbankapi.utils.ValidationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -38,7 +37,7 @@ public class AuthService {
     private final UserLoginAttemptRepository userLoginAttemptRepository;
     @Value("${pl.jewusiak.grzesbankapi.passwordreset.urlprefix}")
     private String passwordResetUrlPrefix;
-    
+
     @Value("pl.jewusiak.grzesbankapi.business.bank_acn")
     private String bankAccountNumber;
 
@@ -69,7 +68,7 @@ public class AuthService {
 
 
     public List<PasswordCombination> generatePasswordCombinations(String rawPassword, User user) {
-        if(rawPassword.length() < 8) {
+        if (rawPassword.length() < 8) {
             throw new IllegalArgumentException("Password has to be >= 8 chars long.");
         }
         List<PasswordCombination> list = new ArrayList<>(5);
@@ -127,28 +126,36 @@ public class AuthService {
         }
         return Optional.empty();
     }
-    
-    public Optional<User> authOauth2(Map<String, Object> attributes) {
-        if(!(attributes.get("email") instanceof String)) 
-            return Optional.empty();
+
+    public User authOauth2(Map<String, Object> attributes) {
+        if (!(attributes.get("email") instanceof String))
+            throw new RuntimeException("No email from OAuth!");
         String email = attributes.get("email").toString();
-        return userRepository.findById(email);
+        var userOpt = userRepository.findById(email);
+        if (userOpt.isPresent())
+            return userOpt.get();
+
+        register(RegistrationRequest.builder().email(attributes.get("email").toString()).firstName(attributes.get("given_name").toString()).lastName(attributes.get("family_name").toString()).pesel("n/a").address(new User.Address("n/a","n/a","n/a")).documentNumber("n/a").initialBalance(BigDecimal.valueOf(1000)).password(genPass()).build());
+        userOpt = userRepository.findById(email);
+        if (userOpt.isPresent())
+            return userOpt.get();
+        throw new RuntimeException("Couldnt register oauth user!");
     }
 
     private boolean decideOnUserLock(User user) {
-        if(user.isLoginLocked()) {
+        if (user.isLoginLocked()) {
             log.info("User {} is already locked out until {}.", user.getEmail(), user.getLoginLockTime());
             return false;
         }
         var numberOfAttempts = userLoginAttemptRepository.countLoginAttemptsByDateAfterAndUserAndOverrideDateIsNullAndSuccessfulIsFalse(ZonedDateTime.now().minusMinutes(30), user);
-        if(numberOfAttempts < 3) {
+        if (numberOfAttempts < 3) {
             return true;
         }
-        
+
         //block account for 12 hrs
         user.setLoginLockTime(LocalDateTime.now().plusHours(12));
         userRepository.save(user);
-        
+
         log.info("User {} has been locked out until {}.", user.getEmail(), user.getLoginLockTime().toString());
         return false;
     }
@@ -162,29 +169,38 @@ public class AuthService {
         var request = passwordResetRequestRepository.save(PasswordResetRequest.builder().user(user.get()).validity(ZonedDateTime.now().plusMinutes(20)).isUsed(false).build());
         log.info("Requested password reset for user {} who has been sent an email with a link {}{} to restore their password. Valid until {}.\nUUID: {}", request.getUser().getEmail(), passwordResetUrlPrefix, request.getId(), request.getValidity(), request.getId());
     }
-    
+
     @Transactional
     public void changePasswordWithToken(UUID token, String newPass) {
         var req = passwordResetRequestRepository.findById(token).orElseThrow(() -> new InvalidResetPasswordToken("Token not found"));
-        if(req.isUsed()) throw new InvalidResetPasswordToken("Token has been already used.");
+        if (req.isUsed()) throw new InvalidResetPasswordToken("Token has been already used.");
         changePasswordForUser(req.getUser(), newPass, true);
         req.setUsed(true);
         passwordResetRequestRepository.save(req);
         userLoginAttemptRepository.overrideLoginsForUser(ZonedDateTime.now(), req.getUser());
     }
-    
+
     public void changePasswordForUser(User user, String newPassword, boolean resetLoginLock) {
         List<PasswordCombination> combinations = generatePasswordCombinations(newPassword, user);
         user.getPasswordCombinations().clear();
         user.getPasswordCombinations().addAll(combinations);
-        if(resetLoginLock) {
+        if (resetLoginLock) {
             user.setLoginLockTime(null);
         }
         userRepository.save(user);
     }
-    
+
     private void addLoginAttempt(User user, boolean isSuccessful) {
         var att = UserLoginAttempt.builder().successful(isSuccessful).date(ZonedDateTime.now()).user(user).build();
         userLoginAttemptRepository.save(att);
+    }
+    
+    private String genPass() {
+        Random random = new Random();
+
+        return random.ints(97, 123)
+                .limit(16)
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                .toString();
     }
 }
